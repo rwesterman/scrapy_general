@@ -2,7 +2,9 @@
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 import logging
-# import pandas as pd
+
+# running scrapy from upneat directory, so this import works fine
+import buildDrinksDB
 
 class RocksSpider(scrapy.Spider):
     name = 'rocks'
@@ -12,6 +14,8 @@ class RocksSpider(scrapy.Spider):
 
     def __init__(self):
         super().__init__()
+
+        self.builder = buildDrinksDB.DB_Builder()
 
         self.log = logging.getLogger("__name__")
         # allowed_domains = ['www.upneat.rocks/recipe/sources/pdt']
@@ -46,11 +50,30 @@ class RocksSpider(scrapy.Spider):
         # get list of ingredients from recipe page
         ingredients = response.xpath('//div[@class="container-fluid"]/div/div/ul/li/text()').extract()
 
-        self._append_to_file(drink_name, source, ingredients)
-
-
-
+        # self._append_to_file(drink_name, source, ingredients)
+        self.add_to_db(drink_name, source, ingredients)
         return
+
+    def add_to_db(self, drink_name, source, ingredients):
+        """Add each drink and its ingredients to a database"""
+        # If the drink is already in the database, move to next drink
+        if self.builder.query_drink_first(drink_name):
+            return
+
+        # Otherwise, add it to the database
+        new_drink = self.builder.add_drink(drink_name, source)
+
+        # loop through ingredients, getting quantity, measurement, and name from each, then add to ingredients db
+        for ing in ingredients:
+            # If the ingredient has "Garnish" in it, add it to garnishes table
+            if "garnish" in ing.lower():
+                gar = self.builder.check_garnish_in_table(ing)
+                new_drink.garnishes.append(gar)
+            # Otherwise, add it to ingredients table
+            else:
+                quantity, measurement, ing_name = self.builder.ing_regex(ing)
+                new_ing = self.builder.add_ingredient(quantity, measurement, ing_name)
+                new_drink.ingredients.append(new_ing)
 
     def _append_to_file(self, drink_name, source, ingredients):
 
